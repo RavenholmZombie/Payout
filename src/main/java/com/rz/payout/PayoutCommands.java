@@ -1,8 +1,11 @@
 package com.rz.payout;
 
 import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.arguments.BoolArgumentType;
+import com.mojang.brigadier.arguments.DoubleArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
+import net.minecraft.commands.CommandBuildContext;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.resources.ResourceLocation;
@@ -10,32 +13,33 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.network.chat.Component;
+import net.minecraft.commands.arguments.item.ItemInput;
+import net.minecraft.commands.arguments.item.ItemArgument;
 
 public class PayoutCommands {
-    public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
+    public static void register(CommandDispatcher<CommandSourceStack> dispatcher, CommandBuildContext context) {
         dispatcher.register(
                 Commands.literal("payout")
                         .requires(source -> source.hasPermission(2)) // admin-only
                         .then(Commands.literal("setItem")
-                                .then(Commands.argument("item", StringArgumentType.string())
+                                .then(Commands.argument("item", ItemArgument.item(context))
                                         .then(Commands.argument("quantity", IntegerArgumentType.integer(1))
                                                 .executes(ctx -> {
-                                                    String itemId = StringArgumentType.getString(ctx, "item");
+                                                    ItemInput input = ItemArgument.getItem(ctx, "item");
                                                     int qty = IntegerArgumentType.getInteger(ctx, "quantity");
-                                                    Item item = BuiltInRegistries.ITEM.getOptional(new ResourceLocation(itemId))
-                                                            .orElse(null);
-                                                    if (item == null) {
-                                                        ctx.getSource().sendFailure(Component.literal("[Payout Error] Unknown item: " + itemId));
-                                                        return 0;
-                                                    }
 
-                                                    ItemStack stack = new ItemStack(item, qty);
+                                                    // Build the ItemStack from the parsed argument
+                                                    ItemStack stack = input.createItemStack(qty, false);
+
+                                                    // Save it in your config
                                                     Payout.setReward(stack);
+                                                    PayoutConfig.save();
 
                                                     ctx.getSource().sendSuccess(
-                                                            () -> Component.literal("[Payout] Reward item set to " + qty + "x " + itemId),
+                                                            () -> Component.literal("[Payout] Reward item set to " + qty + "x " + stack.getDisplayName().getString()),
                                                             false
                                                     );
+
                                                     return 1;
                                                 })
                                         )
@@ -81,20 +85,54 @@ public class PayoutCommands {
                                             return 1;
                                         })
                                 )
+                                .then(Commands.literal("reset")
+                                        .executes(ctx -> {
+                                            PayoutConfig.resetConfig();
+                                            PayoutConfig.SPEC.save();
+                                            ctx.getSource().sendSuccess(
+                                                    () -> Component.literal("[Payout] Config has been reset to defaults."),
+                                                    false
+                                            );
+                                            return 1;
+                                        })
+                                )
+                                .then(Commands.literal("config")
+                                        .executes(ctx -> {
+                                            net.minecraftforge.fml.config.ModConfig cfg = com.rz.payout.PayoutConfig.SERVER_CONFIG;
+                                            String path = (cfg != null) ? cfg.getFullPath().toString() : "<null>";
+                                            ctx.getSource().sendSuccess(
+                                                    () -> Component.literal(
+                                                            "[Payout] Config path: " + path + "\n" +
+                                                                    "item=" + com.rz.payout.PayoutConfig.rewardItem().getItem().toString() + " x" +
+                                                                    com.rz.payout.PayoutConfig.rewardItem().getCount() + "\n" +
+                                                                    "intervalMillis=" + com.rz.payout.PayoutConfig.intervalMillis()
+                                                    ),
+                                                    false
+                                            );
+                                            return 1;
+                                        })
+                                )
                         )
                         .then(Commands.literal("reload")
                                 .executes(ctx -> {
-                                    net.minecraftforge.fml.config.ConfigTracker.INSTANCE.loadConfigs(
-                                            net.minecraftforge.fml.config.ModConfig.Type.SERVER,
-                                            net.minecraftforge.fml.loading.FMLPaths.CONFIGDIR.get()
-                                    );
-                                    ctx.getSource().sendSuccess(
-                                            () -> Component.literal("[Payout] Reloaded payout-server.toml"),
-                                            false
-                                    );
+                                    if (PayoutConfig.SERVER_CONFIG != null) {
+                                        // Save any pending changes
+                                        PayoutConfig.save();
+
+                                        // Re-attach current config values (Forge will have reloaded if the file changed)
+                                        PayoutConfig.attach(PayoutConfig.SERVER_CONFIG);
+
+                                        ctx.getSource().sendSuccess(
+                                                () -> Component.literal("[Payout] Reloaded " + PayoutConfig.SERVER_CONFIG.getFileName()),
+                                                false
+                                        );
+                                    } else {
+                                        ctx.getSource().sendFailure(Component.literal("[Payout Error] No server config is currently attached!"));
+                                    }
                                     return 1;
                                 })
                         )
+
                         .then(Commands.literal("status")
                                 .executes(ctx -> {
                                     ItemStack reward = PayoutConfig.rewardItem();
@@ -102,19 +140,103 @@ public class PayoutCommands {
                                     long now = System.currentTimeMillis();
                                     long elapsed = now - Payout.getLastRunTime();
                                     long remaining = Math.max(interval - elapsed, 0);
+                                    String soundName = PayoutConfig.payoutSound();
+                                    String isSoundEnabled = String.valueOf(PayoutConfig.playPayoutSound());
+                                    float soundVolume = PayoutConfig.payoutVolume();
+                                    String showToast = String.valueOf(PayoutConfig.showToast());
+                                    String toastTitle = PayoutConfig.toastTitle();
+                                    String toastDesc = PayoutConfig.toastDescription();
 
                                     ctx.getSource().sendSuccess(
                                             () -> Component.literal(
-                                                    "Giver Status:\n" +
+                                                    "[Payout] Status:\n" +
                                                             "  • Reward: " + reward.getCount() + "x " + reward.getDisplayName().getString() + "\n" +
                                                             "  • Interval: " + formatDuration(interval) + "\n" +
-                                                            "  • Time until next payout: " + formatDuration(remaining)
+                                                            "  • Time until next payout: " + formatDuration(remaining) + "\n" +
+                                                            "  • Is payout sound enabled: " + isSoundEnabled + "\n" +
+                                                            "  • Payout Sound ID: " + soundName + "\n" +
+                                                            "  • Payout Sound Volume: " + soundVolume + "\n" +
+                                                            "  • Send Toasts to Clients: " + showToast + "\n" +
+                                                            "  • Toast Title: " + toastTitle + "\n" +
+                                                            "  • Toast Description: " + toastDesc
                                             ),
                                             false
                                     );
                                     return 1;
                                 })
                         )
+                        .then(Commands.literal("setPayoutSound")
+                                .then(Commands.argument("sound", StringArgumentType.string())
+                                        .then(Commands.argument("volume", DoubleArgumentType.doubleArg(0.0, 10.0))
+                                                .executes(ctx -> {
+                                                    String sound = StringArgumentType.getString(ctx, "sound");
+                                                    double volume = DoubleArgumentType.getDouble(ctx, "volume");
+
+                                                    PayoutConfig.setPayoutSound(sound, volume);
+                                                    ctx.getSource().sendSuccess(
+                                                            () -> Component.literal("[Payout] Payout sound set to " + sound + " (volume " + volume + ")"),
+                                                            false
+                                                    );
+                                                    return 1;
+                                                })
+                                        )
+                                )
+                        )
+                        .then(Commands.literal("setPlayPayoutSound")
+                                .then(Commands.argument("enabled", BoolArgumentType.bool())
+                                        .executes(ctx -> {
+                                            boolean enabled = BoolArgumentType.getBool(ctx, "enabled");
+                                            PayoutConfig.setPlayPayoutSound(enabled);
+                                            ctx.getSource().sendSuccess(
+                                                    () -> Component.literal("[Payout] Play payout sound: " + enabled),
+                                                    false
+                                            );
+                                            return 1;
+                                        })
+                                )
+                        )
+                        .then(Commands.literal("setShowToasts")
+                                .then(Commands.argument("enabled", BoolArgumentType.bool())
+                                        .executes(ctx -> {
+                                            boolean enabled = BoolArgumentType.getBool(ctx, "enabled");
+                                            PayoutConfig.setShowToast(enabled);
+                                            ctx.getSource().sendSuccess(
+                                                    () -> Component.literal("[Payout] Send Toasts to Clients: " + enabled),
+                                                    false
+                                            );
+                                            return 1;
+                                        })
+                                )
+                        )
+                        .then(Commands.literal("setToastTitle")
+                                .then(Commands.argument("title", StringArgumentType.greedyString())
+                                        .executes(ctx -> {
+                                            String title = StringArgumentType.getString(ctx, "title");
+                                            PayoutConfig.setToastTitle(title);
+                                            PayoutConfig.SPEC.save(); // persist to file
+                                            ctx.getSource().sendSuccess(
+                                                    () -> Component.literal("[Payout] Toast Title Set: " + PayoutConfig.toastTitle()),
+                                                    false
+                                            );
+                                            return 1;
+                                        })
+                                )
+                        )
+                        .then(Commands.literal("setToastDescription")
+                                .then(Commands.argument("description", StringArgumentType.greedyString())
+                                        .executes(ctx -> {
+                                            String desc = StringArgumentType.getString(ctx, "description");
+                                            PayoutConfig.setToastDescription(desc);
+                                            PayoutConfig.SPEC.save(); // persist to file
+                                            ctx.getSource().sendSuccess(
+                                                    () -> Component.literal("[Payout] Toast Description Set: " + PayoutConfig.toastDescription()),
+                                                    false
+                                            );
+                                            return 1;
+                                        })
+                                )
+                        )
+
         );
     }
 

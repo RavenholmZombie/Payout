@@ -7,18 +7,9 @@ version="1.0.0"
 displayName="Payout"
 authors="RavenholmZombie"
 description='''  
-Automatically gives players configurable rewards every set interval.  
-Includes commands for admins to configure item, quantity, interval, manual trigger, reload, and status.  
-Server-side only; clients do not need to install it.  
+Allows server admins to automatically give players items at definable intervals. This mod is highly-configurable.
 '''
-
-# Dependencies
-[[dependencies.giver]]
-modId="forge"
-mandatory=true
-versionRange="[47,)"
-ordering="NONE"
-side="BOTH"
+logoFile="payout.png"
 
 [[dependencies.payout]]
 modId="minecraft"
