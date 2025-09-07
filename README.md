@@ -1,7 +1,7 @@
 <img src="https://iili.io/Ko2KRDv.png" width="150" alt="logo">
 
 # Payout
-## A simple modpack update alerter mod for Forge.
+## A simple mod that allows server admins to automatically give players items at definable intervals.
 
 ### Introduction
 Payout is a simple yet highly-configurable mod that allows server owners and admins to routinely pay items to the server's playerbase.
