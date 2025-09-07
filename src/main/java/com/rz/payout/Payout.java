@@ -81,11 +81,13 @@ public class Payout
     public static void setReward(ItemStack stack)
     {
         PayoutConfig.setReward(stack);
+        PayoutConfig.save();
     }
 
     public static void setInterval(long millis)
     {
         PayoutConfig.setInterval(millis);
+        PayoutConfig.save();
     }
 
     public static void triggerNow(MinecraftServer server)

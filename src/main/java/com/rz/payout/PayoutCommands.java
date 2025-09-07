@@ -89,7 +89,7 @@ public class PayoutCommands {
                                             net.minecraftforge.fml.loading.FMLPaths.CONFIGDIR.get()
                                     );
                                     ctx.getSource().sendSuccess(
-                                            () -> Component.literal("[Payout] Reloaded giver-server.toml"),
+                                            () -> Component.literal("[Payout] Reloaded payout-server.toml"),
                                             false
                                     );
                                     return 1;
