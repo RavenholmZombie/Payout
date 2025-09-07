@@ -1,0 +1,28 @@
+modLoader="javafml"
+loaderVersion="[47,)"
+license="MIT"
+[[mods]]
+modId="payout"
+version="1.0.0"
+displayName="Payout"
+authors="RavenholmZombie"
+description='''  
+Automatically gives players configurable rewards every set interval.  
+Includes commands for admins to configure item, quantity, interval, manual trigger, reload, and status.  
+Server-side only; clients do not need to install it.  
+'''
+
+# Dependencies
+[[dependencies.giver]]
+modId="forge"
+mandatory=true
+versionRange="[47,)"
+ordering="NONE"
+side="BOTH"
+
+[[dependencies.payout]]
+modId="minecraft"
+mandatory=true
+versionRange="[1.20.1,1.21)"
+ordering="NONE"
+side="BOTH"
